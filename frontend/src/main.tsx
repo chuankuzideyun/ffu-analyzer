@@ -9,6 +9,10 @@ const ui = {
   chatPane: { width: '400px', display: 'flex', flexDirection: 'column' as const, background: '#f1f3f5' },
   header: { padding: '12px 20px', borderBottom: '1px solid #dee2e6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff' },
   chatList: { flex: 1, padding: '16px', overflowY: 'auto' as const, display: 'flex', flexDirection: 'column' as const, gap: '12px' },
+  actionTray: { display: 'flex', gap: '8px', padding: '10px 16px', background: '#fff', borderTop: '1px solid #eee', flexWrap: 'wrap' as const },
+  actionBtn: { padding: '6px 12px', background: '#fff', border: '1px solid #0d6efd', color: '#0d6efd', borderRadius: '16px', fontSize: '11px', cursor: 'pointer', fontWeight: 600, transition: '0.2s' },
+  legend: { padding: '8px 16px', display: 'flex', gap: '12px', background: '#fff', fontSize: '10px', color: '#868e96', borderTop: '1px solid #eee' },
+  dot: (color: string) => ({ width: '8px', height: '8px', background: color, borderRadius: '50%', display: 'inline-block', marginRight: '4px' }),
   form: { padding: '16px', background: '#fff', borderTop: '1px solid #dee2e6', display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px' },
   input: { padding: '10px', border: '1px solid #ced4da', borderRadius: '4px', font: 'inherit' },
   btn: { padding: '8px 16px', background: '#0d6efd', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' },
@@ -20,8 +24,6 @@ function App() {
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
-  
-  // New States for the "Clear Links" feature
   const [activeDocContent, setActiveDocContent] = useState<string>('')
   const [highlightedLine, setHighlightedLine] = useState<number | null>(null)
   const [highlightType, setHighlightType] = useState<string | null>(null);
@@ -41,29 +43,29 @@ function App() {
     }, 3000);
   };
 
-  const send = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || thinking) return
-
-    const userMsg = input.trim()
-    const history = [...messages]
+  // Modified send function to accept an optional pre-defined message string
+  const send = async (e: FormEvent | null, promptOverride?: string) => {
+    if (e) e.preventDefault()
     
-    setInput('')
+    const targetMsg = promptOverride || input;
+    if (!targetMsg.trim() || thinking) return
+
+    const history = [...messages]
+    if (!promptOverride) setInput('') // Clear input only if it was a manual type
+    
     setThinking(true)
-    setMessages([...history, { role: 'user', content: userMsg }])
+    setMessages([...history, { role: 'user', content: targetMsg }])
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMsg, history }),
+        body: JSON.stringify({ message: targetMsg, history }),
       })
       
       const data = await response.json()
-      console.log("DEBUG DATA:", data);
       setMessages((m) => [...m, { role: 'assistant', content: data.response }])
       
-      // If the backend returned document content (update your backend to include this!)
       if (data.doc_content) {
         setActiveDocContent(data.doc_content)
       }
@@ -107,9 +109,25 @@ function App() {
           {thinking && <div style={{ fontSize: '14px', color: '#6c757d', padding: '10px' }}>Assistant is reading...</div>}
         </div>
 
+        {/* Quick Actions Panel - Visible after the first message */}
+        {messages.length > 0 && !thinking && (
+          <div style={ui.actionTray}>
+            <button style={ui.actionBtn} onClick={() => send(null, "Extract all RISKS from the current document.")}>⚠️ Extract Risks</button>
+            <button style={ui.actionBtn} onClick={() => send(null, "List all DEADLINES and dates.")}>📅 Key Deadlines</button>
+            <button style={ui.actionBtn} onClick={() => send(null, "Summarize technical REQUIREMENTS.")}>📌 Requirements</button>
+          </div>
+        )}
+
+        {/* Legend Panel */}
+        <div style={ui.legend}>
+          <span><span style={ui.dot('#e03131')}></span>Risk</span>
+          <span><span style={ui.dot('#5c940d')}></span>Deadline</span>
+          <span><span style={ui.dot('#1971c2')}></span>Requirement</span>
+        </div>
+
         <div style={ui.status}>{status}</div>
 
-        <form onSubmit={send} style={ui.form}>
+        <form onSubmit={(e) => send(e)} style={ui.form}>
           <input 
             value={input} 
             onChange={(e) => setInput(e.target.value)} 
