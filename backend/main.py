@@ -19,8 +19,17 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 db = sqlite3.connect(Path(__file__).with_name("ffu.db"), check_same_thread=False)
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 data_dir = Path("data")
-extract = lambda path: pymupdf4llm.to_markdown(str(path), ignore_images=True, ignore_graphics=True)
 
+# Helper to add line numbers to markdown content
+def add_line_numbers(text: str) -> str:
+    lines = text.split('\n')
+    # Prepend [Line Number] to every non-empty line
+    numbered_lines = [f"[{i+1}] {line}" if line.strip() else line for i, line in enumerate(lines)]
+    return '\n'.join(numbered_lines)
+
+def extract_and_number(path: Path):
+    raw_md = pymupdf4llm.to_markdown(str(path), ignore_images=True, ignore_graphics=True)
+    return add_line_numbers(raw_md)
 
 @asynccontextmanager
 async def lifespan(app):
@@ -28,34 +37,52 @@ async def lifespan(app):
     db.commit()
     yield
 
-
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.post("/process")
 def process():
-    logger.info("Processing documents...")
-    db.execute("DELETE FROM documents"); db.commit()
+    logger.info("Processing documents with line numbering...")
+    db.execute("DELETE FROM documents")
+    db.commit()
     paths = sorted(data_dir.rglob("*.pdf"))
+    
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(extract, path): path for path in paths}
+        # Use our new helper function here
+        futures = {pool.submit(extract_and_number, path): path for path in paths}
         for future in as_completed(futures):
             path = futures[future]
-            db.execute("INSERT INTO documents(filename, content) VALUES(?, ?)", (path.name, future.result())); db.commit()
+            db.execute("INSERT INTO documents(filename, content) VALUES(?, ?)", (path.name, future.result()))
+            db.commit()
             logger.info(f"Processed {path.name}")
     return {"status": "ok", "count": len(paths)}
-
 
 @app.post("/chat")
 def chat(body: dict):
     docs = db.execute("SELECT id, filename FROM documents ORDER BY id").fetchall()
-    system = {"role": "system", "content": "You are an FFU document analyst for Swedish construction tender documents. Available documents:\n" + "\n".join(f"{doc_id}: {name}" for doc_id, name in docs) + "\nUse read_document when you need the full content of a document."}
+    
+    msg_content = "" 
+    last_doc_content = ""
+    # Updated System Prompt with strict citation rules
+    system_content = (
+        "You are an FFU document analyst for Swedish construction tender documents.\n"
+        "Available documents:\n" + "\n".join(f"{doc_id}: {name}" for doc_id, name in docs) + "\n\n"
+        "CRITICAL INSTRUCTIONS:\n"
+        "1. Use 'read_document' to access content.\n"
+        "2. For EVERY claim or piece of information you provide, you MUST include a citation.\n"
+        "3. Citation Format: [[doc_id#line_number]]. Example: 'The wall thickness is 200mm [[2#45]]'.\n"
+        "4. The line number is found at the beginning of each line in the format [number].\n"
+        "5. Respond in English unless asked otherwise."
+    )
+    
+    system = {"role": "system", "content": system_content}
     messages = [system, *body.get("history", []), {"role": "user", "content": body.get("message", "")}]
+    
     tools = [{
         "type": "function",
         "function": {
             "name": "read_document",
-            "description": "Read one FFU document by database id.",
+            "description": "Read one FFU document by database id. Content contains [Line Numbers].",
             "parameters": {
                 "type": "object",
                 "properties": {"document_id": {"type": "integer"}},
@@ -63,21 +90,32 @@ def chat(body: dict):
             },
         },
     }]
+
     try:
         for _ in range(10):
             resp = client.chat.completions.create(model="gpt-5.4", messages=messages, tools=tools, tool_choice="auto")
             msg = resp.choices[0].message
+            msg_content = msg.content or ""
             if not msg.tool_calls:
-                return {"response": msg.content or ""}
+                break
             messages.append(msg.model_dump(exclude_none=True))
             for call in msg.tool_calls:
                 args = json.loads(call.function.arguments)
-                row = db.execute("SELECT content FROM documents WHERE id = ?", (args["document_id"],)).fetchone()
+                doc_id = args["document_id"]
+                row = db.execute("SELECT content FROM documents WHERE id = ?", (doc_id,)).fetchone()
+                if row:
+                    current_doc_content = row[0]
+                # Context injection: Tell the model exactly which document it's looking at
+                content_header = f"--- Content of Document ID {doc_id} ---\n"
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call.id,
-                    "content": row[0] if row else "Document not found.",
+                    "content": content_header + (row[0] if row else "Document not found."),
                 })
-        return {"response": "Stopped after 10 tool iterations."}
+        return {
+            "response": msg_content,
+            "doc_content": current_doc_content 
+        }
     except Exception as e:
-        return {"response": f"Error: {e}"}
+        logger.error(f"Chat error: {e}")
+        return {"response": f"Error: {e}", "doc_content": ""}

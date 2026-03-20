@@ -1,0 +1,20 @@
+/* Make the source links look professional */
+.citation-pill {
+  background-color: #e7f5ff; /* Light Blue */
+  color: #1971c2;            /* Darker Blue */
+  border: 1px solid #a5d8ff;
+  border-radius: 12px;       /* Pill shape */
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  margin: 0 3px;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+}
+
+.citation-pill:hover {
+  background-color: #d0ebff;
+  transform: translateY(-1px);
+}
