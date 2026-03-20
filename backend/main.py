@@ -62,18 +62,18 @@ def chat(body: dict):
     docs = db.execute("SELECT id, filename FROM documents ORDER BY id").fetchall()
     
     msg_content = "" 
-    last_doc_content = ""
+    current_doc_content = ""
     # Updated System Prompt with strict citation rules
     system_content = (
-        "You are an FFU document analyst for Swedish construction tender documents.\n"
-        "Available documents:\n" + "\n".join(f"{doc_id}: {name}" for doc_id, name in docs) + "\n\n"
-        "CRITICAL INSTRUCTIONS:\n"
-        "1. Use 'read_document' to access content.\n"
-        "2. For EVERY claim or piece of information you provide, you MUST include a citation.\n"
-        "3. Citation Format: [[doc_id#line_number]]. Example: 'The wall thickness is 200mm [[2#45]]'.\n"
-        "4. The line number is found at the beginning of each line in the format [number].\n"
-        "5. Respond in English unless asked otherwise."
-    )
+        "You are a Swedish construction FFU analyst. "
+        "When you provide a citation, you MUST use this format: [[doc_id#line_number#TYPE#quote_text]].\n"
+        "TYPES allowed:\n"
+        "- RISK: Safety, financial, or technical risks.\n"
+        "- DEADLINE: Dates, milestones, or time limits.\n"
+        "- REQ: Technical requirements or mandatory instructions.\n"
+        "Example: 'The wall thickness is 200mm [[1#45#REQ#väggtjocklek 200mm]]'.\n"
+        "Respond in English, but keep the 'quote_text' in its original language (Swedish)."
+    )   
     
     system = {"role": "system", "content": system_content}
     messages = [system, *body.get("history", []), {"role": "user", "content": body.get("message", "")}]

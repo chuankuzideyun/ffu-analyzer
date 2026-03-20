@@ -24,6 +24,7 @@ function App() {
   // New States for the "Clear Links" feature
   const [activeDocContent, setActiveDocContent] = useState<string>('')
   const [highlightedLine, setHighlightedLine] = useState<number | null>(null)
+  const [highlightType, setHighlightType] = useState<string | null>(null);
 
   const processFfu = async () => {
     setStatus('Processing PDF documents...')
@@ -31,11 +32,14 @@ function App() {
     setStatus(`Done: ${data.count} files indexed.`)
   }
 
-  const handleCiteClick = (lineNum: number) => {
-    setHighlightedLine(lineNum)
-    // Clear highlight after 3 seconds so user can trigger it again
-    setTimeout(() => setHighlightedLine(null), 3000)
-  }
+  const handleCiteClick = (lineNum: number, type: string) => {
+    setHighlightedLine(lineNum);
+    setHighlightType(type);
+    setTimeout(() => {
+      setHighlightedLine(null);
+      setHighlightType(null);
+    }, 3000);
+  };
 
   const send = async (e: FormEvent) => {
     e.preventDefault()

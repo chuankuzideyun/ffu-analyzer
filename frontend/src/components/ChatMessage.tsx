@@ -3,61 +3,73 @@ import React from 'react';
 interface ChatMessageProps {
   role: 'user' | 'assistant';
   content: string;
-  onCiteClick: (lineNum: number) => void;
+  onCiteClick: (lineNum: number, type: string) => void;
 }
+
+const typeStyles: Record<string, any> = {
+  RISK: { bg: '#fff5f5', border: '#ffc9c9', color: '#e03131', label: 'RISK', icon: '⚠️' },
+  DEADLINE: { bg: '#f4fce3', border: '#d8f5a2', color: '#5c940d', label: 'DATE', icon: '📅' },
+  REQ: { bg: '#e7f5ff', border: '#a5d8ff', color: '#1971c2', label: 'REQ', icon: '📌' },
+  DEFAULT: { bg: '#f8f9fa', border: '#dee2e6', color: '#495057', label: 'SRC', icon: '🔗' }
+};
 
 export const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, onCiteClick }) => {
   const isAssistant = role === 'assistant';
 
-  // Helper to parse citations: [[docId#lineNum]]
   const renderContent = (text: string) => {
     if (!isAssistant) return text;
 
-    const parts = text.split(/(\[\[\d+#\d+\]\])/g);
+    // Regex to match [[id#line#type#quote]]
+    const parts = text.split(/(\[\[\d+#\d+#\w+#.*?\]\])/g);
+
     return parts.map((part, i) => {
-      const match = part.match(/\[\[(\d+)#(\d+)\]\]/);
+      const match = part.match(/\[\[(\d+)#(\d+)#(\w+)#(.*?)\]\]/);
       if (match) {
-        const lineNum = parseInt(match[2]);
+        const [_, docId, lineNum, type, quote] = match;
+        const style = typeStyles[type] || typeStyles.DEFAULT;
+
         return (
-          <button
+          <div 
             key={i}
-            onClick={() => onCiteClick(lineNum)}
+            onClick={() => onCiteClick(parseInt(lineNum), type)}
             style={{
-              background: '#e7f5ff',
-              color: '#1971c2',
-              border: '1px solid #a5d8ff',
-              borderRadius: '6px',
-              padding: '2px 6px',
-              fontSize: '11px',
+              background: style.bg,
+              borderLeft: `4px solid ${style.border}`,
+              padding: '8px 12px',
+              margin: '10px 0',
+              borderRadius: '4px',
               cursor: 'pointer',
-              fontWeight: 700,
-              margin: '0 2px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+              transition: 'transform 0.2s'
             }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateX(5px)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateX(0)'}
           >
-            LINE {lineNum}
-          </button>
+            <div style={{ fontWeight: 'bold', color: style.color, fontSize: '11px', marginBottom: '4px' }}>
+              {style.icon} {style.label} | Line {lineNum}
+            </div>
+            <div style={{ fontStyle: 'italic', color: '#444', fontSize: '13px' }}>
+              "{quote}"
+            </div>
+          </div>
         );
       }
-      return part;
+      return <span key={i}>{part}</span>;
     });
   };
 
   return (
-    <div
-      style={{
-        alignSelf: isAssistant ? 'flex-start' : 'flex-end',
-        maxWidth: '85%',
-        padding: '12px 16px',
-        borderRadius: '12px',
-        fontSize: '14px',
-        lineHeight: '1.5',
-        background: isAssistant ? '#fff' : '#0d6efd',
-        color: isAssistant ? '#212529' : '#fff',
-        border: isAssistant ? '1px solid #dee2e6' : 'none',
-        boxShadow: isAssistant ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
-        whiteSpace: 'pre-wrap',
-      }}
-    >
+    <div style={{
+      alignSelf: isAssistant ? 'flex-start' : 'flex-end',
+      maxWidth: '90%',
+      padding: '12px 16px',
+      borderRadius: '12px',
+      background: isAssistant ? '#fff' : '#0d6efd',
+      color: isAssistant ? '#212529' : '#fff',
+      border: isAssistant ? '1px solid #dee2e6' : 'none',
+      marginBottom: '8px',
+      whiteSpace: 'pre-wrap'
+    }}>
       {renderContent(content)}
     </div>
   );
