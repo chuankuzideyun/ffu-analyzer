@@ -23,71 +23,83 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, onCiteC
     // Regex to match [[id#line#type#quote]]
     const parts = text.split(/(\[\[\d+#\d+#\w+#.*?\]\])/g);
 
-    return parts.map((part, i) => {
-      const match = part.match(/\[\[(\d+)#(\d+)#(\w+)#(.*?)\]\]/);
-      if (match) {
-        const [_, docId, lineNum, type, quote] = match;
-        const style = typeStyles[type] || typeStyles.DEFAULT;
+    return (
+      // Wrapping all parts in a container to ensure the white bubble wraps everything
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {parts.map((part, i) => {
+          const match = part.match(/\[\[(\d+)#(\d+)#(\w+)#(.*?)\]\]/);
+          if (match) {
+            const [_, docId, lineNum, type, quote] = match;
+            const style = typeStyles[type] || typeStyles.DEFAULT;
 
-        return (
-          <div 
-            key={i}
-            onClick={() => onCiteClick(parseInt(lineNum), type)}
-            style={{
-              background: style.bg,
-              borderLeft: `4px solid ${style.border}`,
-              padding: '8px 12px',
-              margin: '12px 0',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-              transition: 'transform 0.2s',
-              color: '#212529' // Keep citation text dark even in blue user bubbles
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateX(5px)'}
-            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateX(0)'}
-          >
-            <div style={{ fontWeight: 'bold', color: style.color, fontSize: '11px', marginBottom: '4px' }}>
-              {style.icon} {style.label} | Line {lineNum}
-            </div>
-            <div style={{ fontStyle: 'italic', color: '#444', fontSize: '13px' }}>
-              "{quote}"
-            </div>
-          </div>
-        );
-      }
+            return (
+              <div 
+                key={i}
+                onClick={() => onCiteClick(parseInt(lineNum), type)}
+                style={{
+                  background: style.bg,
+                  borderLeft: `4px solid ${style.border}`,
+                  padding: '8px 12px',
+                  margin: '8px 0',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  transition: 'transform 0.2s',
+                  color: '#212529',
+                  alignSelf: 'stretch'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateX(5px)'}
+                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateX(0)'}
+              >
+                <div style={{ fontWeight: 'bold', color: style.color, fontSize: '11px', marginBottom: '4px' }}>
+                  {style.icon} {style.label} | Line {lineNum}
+                </div>
+                <div style={{ fontStyle: 'italic', color: '#444', fontSize: '13px', lineHeight: '1.4' }}>
+                  "{quote}"
+                </div>
+              </div>
+            );
+          }
 
-      // Render standard Markdown for non-citation parts
-      return (
-        <ReactMarkdown 
-          key={i}
-          components={{
-            // Remove extra margins from paragraphs to keep bubble compact
-            p: ({node, ...props}) => <p style={{ margin: '4px 0' }} {...props} />,
-            ul: ({node, ...props}) => <ul style={{ margin: '8px 0', paddingLeft: '20px' }} {...props} />,
-            ol: ({node, ...props}) => <ol style={{ margin: '8px 0', paddingLeft: '20px' }} {...props} />,
-            li: ({node, ...props}) => <li style={{ marginBottom: '4px' }} {...props} />,
-            strong: ({node, ...props}) => <strong style={{ fontWeight: 600 }} {...props} />,
-          }}
-        >
-          {part}
-        </ReactMarkdown>
-      );
-    });
+          // Skip empty parts
+          if (!part.trim()) return null;
+
+          return (
+            <ReactMarkdown 
+              key={i}
+              components={{
+                p: ({node, ...props}) => <p style={{ margin: '4px 0', wordBreak: 'break-word' }} {...props} />,
+                ul: ({node, ...props}) => <ul style={{ margin: '6px 0', paddingLeft: '20px' }} {...props} />,
+                ol: ({node, ...props}) => <ol style={{ margin: '6px 0', paddingLeft: '20px' }} {...props} />,
+                li: ({node, ...props}) => <li style={{ marginBottom: '2px' }} {...props} />,
+                strong: ({node, ...props}) => <strong style={{ fontWeight: 600 }} {...props} />,
+              }}
+            >
+              {part}
+            </ReactMarkdown>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
     <div style={{
       alignSelf: isAssistant ? 'flex-start' : 'flex-end',
-      maxWidth: '90%',
+      maxWidth: '85%',
+      // Using fit-content and height: auto to ensure the background follows the typing
+      width: 'fit-content',
+      height: 'auto',
       padding: '12px 16px',
       borderRadius: '12px',
       background: isAssistant ? '#fff' : '#0d6efd',
       color: isAssistant ? '#212529' : '#fff',
       border: isAssistant ? '1px solid #dee2e6' : 'none',
-      marginBottom: '8px',
-      whiteSpace: 'normal',
-      boxShadow: isAssistant ? '0 2px 5px rgba(0,0,0,0.05)' : 'none'
+      marginBottom: '12px',
+      boxShadow: isAssistant ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
+      position: 'relative',
+      wordBreak: 'break-word',
+      overflowWrap: 'anywhere'
     }}>
       {renderContent(content)}
     </div>
