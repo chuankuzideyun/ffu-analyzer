@@ -4,9 +4,34 @@ import { ChatMessage } from './components/ChatMessage'
 import { DocumentViewer } from './components/DocumentViewer'
 
 const ui = {
-  page: { margin: 0, height: '100vh', background: '#f8f9fa', display: 'flex', flexDirection: 'row' as const, fontFamily: 'system-ui, sans-serif' },
-  viewerPane: { flex: 1, borderRight: '1px solid #dee2e6', background: '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column' as const },
-  chatPane: { width: '400px', display: 'flex', flexDirection: 'column' as const, background: '#f1f3f5' },
+  page: { margin: 0, height: '100vh', background: '#f8f9fa', display: 'flex', flexDirection: 'row' as const, fontFamily: 'system-ui, sans-serif', overflow: 'hidden' },
+  // 拖拽条样式
+  resizer: {
+    width: '8px',
+    cursor: 'col-resize',
+    background: '#dee2e6',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'background 0.2s',
+    zIndex: 10,
+  },
+  resizerHandle: {
+    width: '4px',
+    height: '40px',
+    background: '#adb5bd',
+    borderRadius: '2px'
+  },
+  viewerPane: (width: number) => ({ 
+    width: `${width}px`, 
+    minWidth: '200px',
+    borderRight: '1px solid #dee2e6', 
+    background: '#fff', 
+    overflow: 'hidden', 
+    display: 'flex', 
+    flexDirection: 'column' as const 
+  }),
+  chatPane: { flex: 1, minWidth: '300px', display: 'flex', flexDirection: 'column' as const, background: '#f1f3f5', overflow: 'hidden' },
   header: { padding: '12px 20px', borderBottom: '1px solid #dee2e6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff' },
   chatList: { flex: 1, padding: '16px', overflowY: 'auto' as const, display: 'flex', flexDirection: 'column' as const, gap: '12px' },
   actionTray: { display: 'flex', gap: '8px', padding: '10px 16px', background: '#fff', borderTop: '1px solid #eee', flexWrap: 'wrap' as const },
@@ -20,7 +45,7 @@ const ui = {
   input: { flex: 1, padding: '10px', border: '1px solid #ced4da', borderRadius: '4px', font: 'inherit' },
   btn: { padding: '8px 16px', background: '#0d6efd', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', minWidth: '80px', fontWeight: 600 },
   status: { fontSize: '12px', color: '#6c757d', padding: '0 16px 8px', fontStyle: 'italic' },
-  iconBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: '#6c757d', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px' }
+  iconBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: '#6c757d', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px' },
 }
 
 const waitingSentences = [
@@ -44,28 +69,58 @@ function App() {
   const [highlightedLine, setHighlightedLine] = useState<number | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [waitingIndex, setWaitingIndex] = useState(0);
+  
+  // 拖拽状态
+  const [leftWidth, setLeftWidth] = useState(window.innerWidth * 0.4);
+  const isResizing = useRef(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const chatListRef = useRef<HTMLDivElement>(null);
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // 1. Scroll to bottom
+  // 1. 拖拽逻辑实现
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      // 限制最小宽度 200px，最大宽度为屏幕宽度减去右侧最小宽度 300px
+      const newWidth = Math.max(200, Math.min(e.clientX, window.innerWidth - 300));
+      setLeftWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      isResizing.current = false;
+      document.body.style.cursor = 'default';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    document.body.style.cursor = 'col-resize';
+  };
+
+  // 2. 自动滚动
   useEffect(() => {
     if (chatListRef.current) {
       chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
     }
   }, [messages, thinking]);
 
-  // 2. Cycle through funny waiting sentences
+  // 3. 循环等待语
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (thinking && !typingIntervalRef.current) {
       interval = setInterval(() => {
         setWaitingIndex((prev) => (prev + 1) % waitingSentences.length);
-      }, 5500);
+      }, 3500); // 调整了频率，让句子切换更自然
     }
     return () => clearInterval(interval);
   }, [thinking]);
@@ -88,10 +143,9 @@ function App() {
     const targetMsg = promptOverride || input;
     if (!targetMsg.trim() || thinking || typingIntervalRef.current) return;
 
-    // Clear any previous "Stopped." or error status
     setStatus('');
     setThinking(true);
-    setWaitingIndex(0); // Reset humor rotation
+    setWaitingIndex(0);
     
     const history = [...messages]; 
     setMessages((m) => [...m, { role: 'user', content: targetMsg }]);
@@ -143,7 +197,6 @@ function App() {
     }
   };
 
-  // ... (handleFileChange, startCamera, etc. functions remain the same as previous) ...
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) { setSelectedFile(file); setStatus(`Ready: ${file.name}`); }
@@ -156,9 +209,13 @@ function App() {
 
   return (
     <div style={ui.page}>
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .resizer-hover:hover { background: #0d6efd !important; }
+      `}</style>
       
-      <div style={ui.viewerPane}>
+      {/* 左侧面板 */}
+      <div style={ui.viewerPane(leftWidth)}>
         <div style={ui.header}>
           <h3 style={{ margin: 0, fontSize: '16px' }}>Source Document</h3>
           <button onClick={() => setStatus('Indexing...')} style={{ ...ui.btn, background: '#6c757d', fontSize: '11px', minWidth: 'auto' }}>Re-index FFU</button>
@@ -168,6 +225,16 @@ function App() {
         </div>
       </div>
 
+      {/* 拖拽把手 Resizer */}
+      <div 
+        style={ui.resizer} 
+        onMouseDown={handleMouseDown}
+        className="resizer-hover"
+      >
+        <div style={ui.resizerHandle} />
+      </div>
+
+      {/* 右侧面板 */}
       <div style={ui.chatPane}>
         <div style={ui.header}><h3 style={{ margin: 0, fontSize: '16px' }}>Assistant</h3></div>
         
