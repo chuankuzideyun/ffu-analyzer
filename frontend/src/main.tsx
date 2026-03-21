@@ -18,7 +18,7 @@ const ui = {
   fileBadge: { padding: '4px 8px', background: '#e7f5ff', color: '#1971c2', borderRadius: '4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' },
   form: { padding: '16px', display: 'flex', alignItems: 'center', gap: '8px' },
   input: { flex: 1, padding: '10px', border: '1px solid #ced4da', borderRadius: '4px', font: 'inherit' },
-  btn: { padding: '8px 16px', background: '#0d6efd', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' },
+  btn: { padding: '8px 16px', background: '#0d6efd', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', minWidth: '80px', fontWeight: 600, transition: 'background 0.2s' },
   status: { fontSize: '12px', color: '#6c757d', padding: '0 16px 8px' },
   iconBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: '#6c757d', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', transition: 'all 0.2s ease' },
   cameraOverlay: { position: 'fixed' as const, top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: '20px' }
@@ -37,34 +37,47 @@ function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Ref for automatic scrolling
   const chatListRef = useRef<HTMLDivElement>(null);
+  const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Effect to automatically scroll the chat list to the bottom
   useEffect(() => {
     if (chatListRef.current) {
       chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
     }
-  }, [messages, thinking]); // Scroll when messages change or status changes
+  }, [messages, thinking]);
+
+  // Unified stop function
+  const stopGenerating = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+    setThinking(false);
+    setStatus('Stopped.');
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
-      setStatus(`File selected: ${file.name}. Ready for analysis.`);
+      setStatus(`Ready: ${file.name}`);
     }
   };
 
   const startCamera = async () => {
-    const consent = window.confirm("The assistant requests camera access for visual analysis. Allow?");
+    const consent = window.confirm("Request camera access?");
     if (!consent) return;
     try {
       setIsCameraActive(true);
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch (err) {
-      setStatus("Error: Camera access denied.");
+      setStatus("Denied.");
       setIsCameraActive(false);
     }
   };
@@ -79,7 +92,7 @@ function App() {
         if (blob) {
           const file = new File([blob], `capture_${Date.now()}.png`, { type: 'image/png' });
           setSelectedFile(file);
-          setStatus("Camera photo captured!");
+          setStatus("Photo ready!");
         }
       }, 'image/png');
       stopCamera();
@@ -92,97 +105,86 @@ function App() {
     setIsCameraActive(false);
   };
 
-  const processFfu = async () => {
-    setStatus('Processing PDF documents...')
-    try {
-      const data = await fetch('/api/process', { method: 'POST' }).then((r) => r.json())
-      setStatus(`Done: ${data.count} files indexed.`)
-    } catch (e) { setStatus('Error during processing.') }
-  }
-
   const handleCiteClick = (lineNum: number) => {
     setHighlightedLine(lineNum);
     setTimeout(() => setHighlightedLine(null), 5000);
   };
 
   const send = async (e: FormEvent | null, promptOverride?: string) => {
-  if (e) e.preventDefault();
-  
-  const targetMsg = promptOverride || input;
-  if (!targetMsg.trim() || thinking) return;
+    if (e) e.preventDefault();
+    const targetMsg = promptOverride || input;
+    if (!targetMsg.trim() || thinking || typingIntervalRef.current) return;
 
-  setThinking(true);
-  const history = [...messages]; 
-  setMessages((m) => [...m, { role: 'user', content: targetMsg }]);
-  if (!promptOverride) setInput('');
-  setSelectedFile(null); // Assuming you have this multi-modal state
+    setStatus('');
+    setThinking(true);
+    setMessages((m) => [...m, { role: 'user', content: targetMsg }]);
+    if (!promptOverride) setInput('');
+    setSelectedFile(null);
 
-  try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: targetMsg, history }),
-    });
-    
-    const data = await response.json();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
-    // 🏆 FIX 1: Update left pane IMMEDIATELY so text shows up while AI types
-    if (data.doc_content) {
-      setActiveDocContent(data.doc_content);
-    }
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: targetMsg, history: messages }),
+        signal: controller.signal
+      });
+      
+      const data = await response.json();
+      if (data.doc_content) setActiveDocContent(data.doc_content);
 
-    // Initialize the empty assistant bubble for typing effect
-    setMessages((m) => [...m, { role: 'assistant', content: '' }]);
+      setMessages((m) => [...m, { role: 'assistant', content: '' }]);
 
-    const fullText = data.response;
-    let currentText = "";
-    let index = 0;
+      const fullText = data.response;
+      let currentText = "";
+      let index = 0;
 
-    // --- Typing Simulation ---
-    const interval = setInterval(() => {
-      if (index < fullText.length) {
-        currentText += fullText[index];
-        
-        setMessages((prevMessages) => {
-          const updatedMessages = [...prevMessages];
-          const lastIdx = updatedMessages.length - 1;
-          if (lastIdx >= 0 && updatedMessages[lastIdx].role === 'assistant') {
-            updatedMessages[lastIdx] = { ...updatedMessages[lastIdx], content: currentText };
-          }
-          return updatedMessages;
-        });
-        index++;
-      } else {
-        // --- FINISHED ---
-        clearInterval(interval);
-        // We already updated doc_content above, so just clean up state
-        setThinking(false);
+      typingIntervalRef.current = setInterval(() => {
+        if (index < fullText.length) {
+          currentText += fullText[index];
+          setMessages((prevMessages) => {
+            const updated = [...prevMessages];
+            const lastIdx = updated.length - 1;
+            if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+              updated[lastIdx] = { ...updated[lastIdx], content: currentText };
+            }
+            return updated;
+          });
+          index++;
+        } else {
+          clearInterval(typingIntervalRef.current!);
+          typingIntervalRef.current = null;
+          setThinking(false);
+        }
+      }, 15);
+
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setStatus('Error connecting.');
       }
-    }, 15); // Slightly faster feels smoother (15ms)
-
-  } catch (err) {
-    setStatus('Error: Failed to connect to backend.');
-    setThinking(false);
-  }
-};
+      setThinking(false);
+    }
+  };
 
   return (
     <div style={ui.page}>
       {isCameraActive && (
         <div style={ui.cameraOverlay}>
-          <video ref={videoRef} autoPlay style={{ width: '80%', maxWidth: '640px', borderRadius: '12px', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }} />
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
+          <video ref={videoRef} autoPlay style={{ width: '80%', maxWidth: '640px', borderRadius: '12px' }} />
           <div style={{ display: 'flex', gap: '12px' }}>
-            <button onClick={capturePhoto} style={{ ...ui.btn, background: '#40c057' }}>📸 Take Photo</button>
+            <button onClick={capturePhoto} style={{ ...ui.btn, background: '#40c057' }}>📸 Capture</button>
             <button onClick={stopCamera} style={{ ...ui.btn, background: '#fa5252' }}>Cancel</button>
           </div>
+          <canvas ref={canvasRef} style={{ display: 'none' }} />
         </div>
       )}
 
       <div style={ui.viewerPane}>
         <div style={ui.header}>
           <h3 style={{ margin: 0, fontSize: '16px' }}>Source Document</h3>
-          <button onClick={processFfu} style={{ ...ui.btn, background: '#6c757d', fontSize: '11px' }}>Re-index FFU</button>
+          <button onClick={() => setStatus('Indexing...')} style={{ ...ui.btn, background: '#6c757d', fontSize: '11px', minWidth: 'auto' }}>Re-index FFU</button>
         </div>
         <div style={{ flex: 1, overflowY: 'hidden' }}>
           <DocumentViewer content={activeDocContent} highlightedLine={highlightedLine} />
@@ -192,17 +194,18 @@ function App() {
       <div style={ui.chatPane}>
         <div style={ui.header}><h3 style={{ margin: 0, fontSize: '16px' }}>Assistant</h3></div>
         
-        {/* Added Ref for automatic scrolling */}
         <div ref={chatListRef} style={ui.chatList}>
           {messages.map((msg, i) => (
             <ChatMessage key={i} role={msg.role} content={msg.content} onCiteClick={handleCiteClick} />
           ))}
-          {thinking && <div style={{ fontSize: '13px', color: '#6c757d', padding: '10px' }}>Analyzing construction documents...</div>}
+          {thinking && !typingIntervalRef.current && (
+            <div style={{ fontSize: '13px', color: '#6c757d', padding: '10px' }}>Analyzing...</div>
+          )}
         </div>
 
-        {messages.length > 0 && !thinking && (
+        {!thinking && !typingIntervalRef.current && messages.length > 0 && (
           <div style={ui.actionTray}>
-            <button style={ui.actionBtn} onClick={() => send(null, "List all RISKS found.")}>⚠️ Risks</button>
+            <button style={ui.actionBtn} onClick={() => send(null, "List all RISKS.")}>⚠️ Risks</button>
             <button style={ui.actionBtn} onClick={() => send(null, "List all DEADLINES.")}>📅 Dates</button>
             <button style={ui.actionBtn} onClick={() => send(null, "Summarize REQUIREMENTS.")}>📌 Reqs</button>
           </div>
@@ -227,15 +230,33 @@ function App() {
 
           <form onSubmit={(e) => send(e)} style={ui.form}>
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="application/pdf,image/*" style={{ display: 'none' }} />
-            <button type="button" onClick={() => fileInputRef.current?.click()} style={ui.iconBtn} title="Upload PDF/Image">📎</button>
-            <button type="button" onClick={startCamera} style={ui.iconBtn} title="Capture from Camera">📷</button>
+            <button type="button" onClick={() => fileInputRef.current?.click()} style={ui.iconBtn}>📎</button>
+            <button type="button" onClick={startCamera} style={ui.iconBtn}>📷</button>
+            
             <input 
               value={input} 
               onChange={(e) => setInput(e.target.value)} 
-              placeholder="Ask a question or upload a photo..." 
+              placeholder="Type a message..." 
               style={ui.input} 
             />
-            <button style={ui.btn}>Send</button>
+
+            {/* Toggle Button: Stop if thinking/typing, otherwise Send */}
+            {(thinking || typingIntervalRef.current) ? (
+              <button 
+                type="button" 
+                onClick={stopGenerating} 
+                style={{ ...ui.btn, background: '#ff6b6b' }}
+              >
+                Stop
+              </button>
+            ) : (
+              <button 
+                type="submit" 
+                style={ui.btn}
+              >
+                Send
+              </button>
+            )}
           </form>
         </div>
       </div>
