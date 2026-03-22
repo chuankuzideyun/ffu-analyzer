@@ -152,11 +152,14 @@ function App() {
     if (!promptOverride) setInput('');
     setSelectedFile(null);
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
+  const controller = new AbortController();
+  abortControllerRef.current = controller;
 
-    try {
-      const response = await fetch('/api/chat', {
+  const API_BASE_URL = (import.meta as any).env?.DEV
+    ? 'http://localhost:8000'
+    : '';
+  try {
+      const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: targetMsg, history }),
