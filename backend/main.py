@@ -65,6 +65,12 @@ def process():
 
 @app.post("/api/chat")
 def chat(body: dict = Body(...)):
+    user_text = body.get("message", "Analyze this.")
+    image_b64 = body.get("image", "")
+    user_content = [{"type": "text", "text": user_text}]
+    if image_b64:
+        user_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
+
     msg_content = "" 
     current_doc_content = ""
     system_content = (
@@ -76,7 +82,7 @@ def chat(body: dict = Body(...)):
     messages = [
         {"role": "system", "content": system_content},
         *body.get("history", []),
-        {"role": "user", "content": body.get("message", "")}
+        {"role": "user", "content": user_content}
     ]
     
     tools = [{
@@ -93,6 +99,11 @@ def chat(body: dict = Body(...)):
     }]
 
     try:
+        resp = client.chat.completions.create(
+            model="gpt-4o", 
+            messages=messages, 
+            tools=tools
+        )
         for _ in range(5):
             resp = client.chat.completions.create(model="gpt-4o", messages=messages, tools=tools)
             msg = resp.choices[0].message

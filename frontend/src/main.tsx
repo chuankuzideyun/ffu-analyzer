@@ -70,14 +70,13 @@ function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [waitingIndex, setWaitingIndex] = useState(0);
   
-  // 拖拽状态
   const [leftWidth, setLeftWidth] = useState(window.innerWidth * 0.4);
   const isResizing = useRef(false);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatListRef = useRef<HTMLDivElement>(null);
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // 1. 拖拽逻辑实现
   useEffect(() => {
@@ -125,6 +124,18 @@ function App() {
     return () => clearInterval(interval);
   }, [thinking]);
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const base64String = (reader.result as string).split(',')[1];
+        resolve(base64String);
+      };
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
   const stopGenerating = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -141,14 +152,25 @@ function App() {
   const send = async (e: FormEvent | null, promptOverride?: string) => {
     if (e) e.preventDefault();
     const targetMsg = promptOverride || input;
-    if (!targetMsg.trim() || thinking || typingIntervalRef.current) return;
-
+    if (!targetMsg.trim() && !selectedFile) return;
+    
     setStatus('');
     setThinking(true);
+    const currentFile = selectedFile;
+    setSelectedFile(null);
     setWaitingIndex(0);
+
+    let imageBase64 = '';
+    if (currentFile && currentFile.type.startsWith('image/')) {
+      try {
+        imageBase64 = await fileToBase64(currentFile);
+      } catch (err) {
+        console.error("Base64 conversion error", err);
+      }
+    }
     
     const history = [...messages]; 
-    setMessages((m) => [...m, { role: 'user', content: targetMsg }]);
+    setMessages((m) => [...m, { role: 'user', content: targetMsg || "Analyze this image." }]);
     if (!promptOverride) setInput('');
     setSelectedFile(null);
 
@@ -162,7 +184,11 @@ function App() {
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: targetMsg, history }),
+        body: JSON.stringify({ 
+          message: targetMsg, 
+          history, 
+          image: imageBase64
+        }),
         signal: controller.signal
       });
       
@@ -279,10 +305,39 @@ function App() {
           <div style={ui.status}>{status}</div>
 
           <form onSubmit={(e) => send(e)} style={ui.form}>
-            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="application/pdf,image/*" style={{ display: 'none' }} />
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileChange} 
+              accept="application/pdf,image/*" 
+              style={{ display: 'none' }} 
+            />
+
+            <input 
+              type="file" 
+              ref={cameraInputRef} 
+              onChange={handleFileChange} 
+              accept="image/*" 
+              capture="environment" 
+              style={{ display: 'none' }} 
+            />
+
             <button type="button" onClick={() => fileInputRef.current?.click()} style={ui.iconBtn}>📎</button>
-            <button type="button" onClick={() => alert('Camera feature integrated in main logic')} style={ui.iconBtn}>📷</button>
-            <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Search or ask about plans..." style={ui.input} />
+            
+            <button 
+              type="button" 
+              onClick={() => cameraInputRef.current?.click()} 
+              style={ui.iconBtn}
+            >
+              📷
+            </button>
+
+            <input 
+              value={input} 
+              onChange={(e) => setInput(e.target.value)} 
+              placeholder="Search or ask about plans..." 
+              style={ui.input} 
+            />
             
             {(thinking || typingIntervalRef.current) ? (
               <button type="button" onClick={stopGenerating} style={{ ...ui.btn, background: '#ff6b6b' }}>Stop</button>
