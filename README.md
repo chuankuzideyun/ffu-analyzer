@@ -71,3 +71,6 @@ Frontend: Vercel
 Backend: Railway
 
 Database: SQLite (Pre-indexed ffu.db included in repository)
+
+## Application Interface
+<img width="1804" height="957" alt="image" src="https://github.com/user-attachments/assets/904aaadd-4536-471b-9ff2-d3a475d829f3" />
