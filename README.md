@@ -9,8 +9,10 @@
 ### What I built
 I developed a specialized AI assistant for the Swedish construction industry to analyze **FFU (Förfrågningsunderlag)** documents. 
 * **Precise Citation System:** The AI links answers directly to source text using a `[[doc_id#line#TYPE#quote]]` format.
-* **Dual Pane:** A professional interface with a searchable Document Viewer and a categorized Chat Assistant.
+* **Dual Pane:** A resizable split-pane interface with a draggable handle, allowing users to balance their workspace between the Document Viewer and Chat Assistant.
+* **Intelligent Document Viewer:** Enhanced with source linking and automated navigation tools.
 * **Clear Dashboard:** An automated overview summarizing **Risks, Deadlines, and Requirements**.
+* **Smooth Chat Flow:** Implemented typing animations and auto-scroll functionality for a natural conversation feel.
 * **Multi-modal Support:** Support for **mobile camera capture** to analyze on-site photos against document specifications.
 
 ### Why I chose to build it
